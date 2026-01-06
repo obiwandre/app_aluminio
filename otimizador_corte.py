@@ -1,6 +1,6 @@
 """
 Otimizador de Corte de Barras de Alumínio
-Versão: 0.0.4
+Versão: 0.0.5
 Objetivo: Minimizar desperdício e maximizar sobras úteis
 """
 
@@ -136,12 +136,14 @@ class OtimizadorCorte:
         uso_total = sum(barra) + len(barra) * self.espessura_corte
         sobra = self.tamanho_barra - uso_total
 
-        # Se tudo cabe no limite, não precisa cortar para transporte
-        if uso_total <= self.limite_transporte:
+        # IMPORTANTE: A barra inteira (600cm) precisa ser transportada!
+        # Mesmo que as peças sejam pequenas, a sobra também vai no carro.
+        # Só não precisa cortar se a BARRA INTEIRA couber no limite.
+        if self.tamanho_barra <= self.limite_transporte:
             return {
                 'precisa_corte': False,
-                'motivo': f'Tudo cabe em {self.limite_transporte}cm',
-                'pedaco_unico': uso_total
+                'motivo': f'Barra inteira cabe no limite ({self.tamanho_barra}cm <= {self.limite_transporte}cm)',
+                'pedaco_unico': self.tamanho_barra
             }
 
         # Estratégia: agrupa peças em dois pedaços, tentando:
