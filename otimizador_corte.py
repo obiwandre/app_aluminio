@@ -1,6 +1,6 @@
 """
 Otimizador de Corte de Barras de Alumínio
-Versão: 0.0.3
+Versão: 0.0.4
 Objetivo: Minimizar desperdício e maximizar sobras úteis
 """
 
@@ -144,11 +144,15 @@ class OtimizadorCorte:
                 'pedaco_unico': uso_total
             }
 
-        # Estratégia: agrupa peças em dois pedaços, tentando maximizar sobra em um deles
-        # Testa várias combinações para encontrar a melhor divisão
+        # Estratégia: agrupa peças em dois pedaços, tentando:
+        # 1. Primeiro: encontrar divisão que cabe no limite
+        # 2. Se não encontrar: encontrar a melhor divisão possível (mesmo passando do limite)
+        # Em ambos os casos, maximiza a sobra em um dos pedaços
 
-        melhor_divisao = None
-        melhor_sobra_max = -1
+        melhor_divisao_dentro_limite = None
+        melhor_divisao_geral = None
+        melhor_score_limite = -1  # Score para divisões dentro do limite
+        melhor_score_geral = float('inf')  # Score para melhor divisão geral (menor excesso)
 
         # Gera todas as possíveis divisões das peças em dois grupos
         n = len(pecas_ordenadas)
@@ -170,57 +174,67 @@ class OtimizadorCorte:
             tam_grupo1 = sum(grupo1) + len(grupo1) * self.espessura_corte
             tam_grupo2 = sum(grupo2) + len(grupo2) * self.espessura_corte
 
-            # Adiciona espaço para a sobra no grupo que tiver espaço
-            # A sobra vai junto com um dos grupos
+            # Testa as duas opções de onde colocar a sobra
+            for sobra_em in [1, 2]:
+                if sobra_em == 1:
+                    tam_pedaco1 = tam_grupo1 + sobra
+                    tam_pedaco2 = tam_grupo2 + self.espessura_corte
+                    ponto = tam_grupo2 + self.espessura_corte
+                else:
+                    tam_pedaco1 = tam_grupo1 + self.espessura_corte
+                    tam_pedaco2 = tam_grupo2 + sobra
+                    ponto = tam_grupo1 + self.espessura_corte
 
-            # Tenta sobra no grupo 1
-            tam_pedaco1_com_sobra = tam_grupo1 + sobra
-            tam_pedaco2_sem_sobra = tam_grupo2 + self.espessura_corte  # corte de transporte
+                # Calcula o maior pedaço (o que importa pro transporte)
+                maior_pedaco = max(tam_pedaco1, tam_pedaco2)
+                excesso = max(0, maior_pedaco - self.limite_transporte)
 
-            if tam_pedaco1_com_sobra <= self.limite_transporte and tam_pedaco2_sem_sobra <= self.limite_transporte:
-                if sobra > melhor_sobra_max:
-                    melhor_sobra_max = sobra
-                    melhor_divisao = {
-                        'precisa_corte': True,
-                        'pedaco_1': grupo1,
-                        'pedaco_2': grupo2,
-                        'tamanho_pedaco_1': tam_pedaco1_com_sobra,
-                        'tamanho_pedaco_2': tam_pedaco2_sem_sobra,
-                        'sobra_fica_em': 1,
-                        'sobra': sobra,
-                        'ponto_corte': tam_grupo2 + self.espessura_corte
-                    }
+                divisao = {
+                    'precisa_corte': True,
+                    'pedaco_1': grupo1.copy(),
+                    'pedaco_2': grupo2.copy(),
+                    'tamanho_pedaco_1': tam_pedaco1,
+                    'tamanho_pedaco_2': tam_pedaco2,
+                    'sobra_fica_em': sobra_em,
+                    'sobra': sobra,
+                    'ponto_corte': ponto,
+                    'excesso': excesso
+                }
 
-            # Tenta sobra no grupo 2
-            tam_pedaco1_sem_sobra = tam_grupo1 + self.espessura_corte  # corte de transporte
-            tam_pedaco2_com_sobra = tam_grupo2 + sobra
+                # Se cabe no limite, guarda como melhor dentro do limite
+                if tam_pedaco1 <= self.limite_transporte and tam_pedaco2 <= self.limite_transporte:
+                    if sobra > melhor_score_limite:
+                        melhor_score_limite = sobra
+                        melhor_divisao_dentro_limite = divisao.copy()
+                        melhor_divisao_dentro_limite['cabe_no_limite'] = True
 
-            if tam_pedaco1_sem_sobra <= self.limite_transporte and tam_pedaco2_com_sobra <= self.limite_transporte:
-                if sobra > melhor_sobra_max:
-                    melhor_sobra_max = sobra
-                    melhor_divisao = {
-                        'precisa_corte': True,
-                        'pedaco_1': grupo1,
-                        'pedaco_2': grupo2,
-                        'tamanho_pedaco_1': tam_pedaco1_sem_sobra,
-                        'tamanho_pedaco_2': tam_pedaco2_com_sobra,
-                        'sobra_fica_em': 2,
-                        'sobra': sobra,
-                        'ponto_corte': tam_grupo1 + self.espessura_corte
-                    }
+                # Guarda a melhor divisão geral (menor excesso, depois maior sobra)
+                # Score: (excesso, -sobra) - menor excesso é melhor, depois maior sobra
+                score_atual = (excesso, -sobra)
+                score_melhor = (melhor_score_geral, float('inf'))
+                if melhor_divisao_geral:
+                    score_melhor = (melhor_divisao_geral.get('excesso', float('inf')), -melhor_divisao_geral.get('sobra', 0))
 
-        if melhor_divisao:
-            return melhor_divisao
+                if score_atual < score_melhor:
+                    melhor_score_geral = excesso
+                    melhor_divisao_geral = divisao.copy()
+                    melhor_divisao_geral['cabe_no_limite'] = (excesso == 0)
 
-        # Se não encontrou divisão válida, tenta corte simples no meio
-        # (algumas peças podem ser maiores que limite_transporte/2)
-        ponto_corte = self.limite_transporte
+        # Retorna a divisão dentro do limite se existir, senão a melhor geral
+        if melhor_divisao_dentro_limite:
+            return melhor_divisao_dentro_limite
+
+        if melhor_divisao_geral:
+            return melhor_divisao_geral
+
+        # Fallback: corte no meio (não deveria chegar aqui)
         return {
             'precisa_corte': True,
-            'aviso': f'Algumas peças podem não caber no limite de {self.limite_transporte}cm',
-            'ponto_corte': ponto_corte,
-            'tamanho_pedaco_1': ponto_corte,
-            'tamanho_pedaco_2': self.tamanho_barra - ponto_corte - self.espessura_corte
+            'ponto_corte': self.tamanho_barra / 2,
+            'tamanho_pedaco_1': self.tamanho_barra / 2,
+            'tamanho_pedaco_2': self.tamanho_barra / 2 - self.espessura_corte,
+            'excesso': max(0, self.tamanho_barra / 2 - self.limite_transporte),
+            'cabe_no_limite': False
         }
 
     def analisar_resultado(self, barras: List[List[float]]) -> dict:
@@ -542,23 +556,31 @@ class InterfaceGrafica:
                 if not corte.get('precisa_corte', True):
                     texto += f"\n   🚗 TRANSPORTE: Cabe inteira no carro ({corte.get('pedaco_unico', 0):.1f}cm)\n"
                 else:
-                    texto += f"\n   🚗 CORTE PARA TRANSPORTE (máx {limite_transporte}cm):\n"
+                    texto += f"\n   🚗 CORTE PARA TRANSPORTE (limite {limite_transporte}cm):\n"
 
-                    if 'aviso' in corte:
-                        texto += f"   ⚠️  {corte['aviso']}\n"
-                    else:
-                        texto += f"   ✂️  Cortar em: {corte['ponto_corte']:.1f}cm da ponta\n"
-                        texto += f"\n   Pedaço A ({corte['tamanho_pedaco_1']:.1f}cm):\n"
-                        if 'pedaco_1' in corte:
-                            texto += f"      Peças: {' + '.join(f'{p}cm' for p in sorted(corte['pedaco_1'], reverse=True))}\n"
-                            if corte['sobra_fica_em'] == 1:
-                                texto += f"      + Sobra de {corte['sobra']:.1f}cm\n"
+                    # Aviso se passa do limite
+                    if not corte.get('cabe_no_limite', True) and corte.get('excesso', 0) > 0:
+                        texto += f"   ⚠️  ATENÇÃO: Passa {corte['excesso']:.1f}cm do limite!\n"
 
-                        texto += f"\n   Pedaço B ({corte['tamanho_pedaco_2']:.1f}cm):\n"
-                        if 'pedaco_2' in corte:
-                            texto += f"      Peças: {' + '.join(f'{p}cm' for p in sorted(corte['pedaco_2'], reverse=True))}\n"
-                            if corte['sobra_fica_em'] == 2:
-                                texto += f"      + Sobra de {corte['sobra']:.1f}cm\n"
+                    texto += f"   ✂️  Cortar em: {corte['ponto_corte']:.1f}cm da ponta\n"
+
+                    texto += f"\n   Pedaço A ({corte['tamanho_pedaco_1']:.1f}cm)"
+                    if corte['tamanho_pedaco_1'] > limite_transporte:
+                        texto += f" ⚠️ +{corte['tamanho_pedaco_1'] - limite_transporte:.1f}cm"
+                    texto += ":\n"
+                    if 'pedaco_1' in corte:
+                        texto += f"      Peças: {' + '.join(f'{p}cm' for p in sorted(corte['pedaco_1'], reverse=True))}\n"
+                        if corte.get('sobra_fica_em') == 1 and corte.get('sobra', 0) > 0:
+                            texto += f"      + Sobra de {corte['sobra']:.1f}cm\n"
+
+                    texto += f"\n   Pedaço B ({corte['tamanho_pedaco_2']:.1f}cm)"
+                    if corte['tamanho_pedaco_2'] > limite_transporte:
+                        texto += f" ⚠️ +{corte['tamanho_pedaco_2'] - limite_transporte:.1f}cm"
+                    texto += ":\n"
+                    if 'pedaco_2' in corte:
+                        texto += f"      Peças: {' + '.join(f'{p}cm' for p in sorted(corte['pedaco_2'], reverse=True))}\n"
+                        if corte.get('sobra_fica_em') == 2 and corte.get('sobra', 0) > 0:
+                            texto += f"      + Sobra de {corte['sobra']:.1f}cm\n"
 
             texto += "\n" + "-" * 65 + "\n"
 
@@ -742,10 +764,14 @@ def modo_terminal():
             if not corte.get('precisa_corte', True):
                 print(f"         Transporte: Cabe inteira no carro")
             elif 'ponto_corte' in corte:
+                if not corte.get('cabe_no_limite', True) and corte.get('excesso', 0) > 0:
+                    print(f"         ⚠️  ATENÇÃO: Passa {corte['excesso']:.1f}cm do limite!")
                 print(f"         Corte transporte: {corte['ponto_corte']:.1f}cm da ponta")
                 if 'pedaco_1' in corte:
-                    print(f"           Pedaço A: {' + '.join(f'{p}cm' for p in corte['pedaco_1'])}")
-                    print(f"           Pedaço B: {' + '.join(f'{p}cm' for p in corte['pedaco_2'])}")
+                    extra_a = f" (+{corte['tamanho_pedaco_1'] - limite_transporte:.1f}cm)" if corte['tamanho_pedaco_1'] > limite_transporte else ""
+                    extra_b = f" (+{corte['tamanho_pedaco_2'] - limite_transporte:.1f}cm)" if corte['tamanho_pedaco_2'] > limite_transporte else ""
+                    print(f"           Pedaço A ({corte['tamanho_pedaco_1']:.1f}cm){extra_a}: {' + '.join(f'{p}cm' for p in corte['pedaco_1'])}")
+                    print(f"           Pedaço B ({corte['tamanho_pedaco_2']:.1f}cm){extra_b}: {' + '.join(f'{p}cm' for p in corte['pedaco_2'])}")
         print()
 
     print("-" * 65)
