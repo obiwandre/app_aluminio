@@ -1,12 +1,12 @@
 """
 Otimizador de Corte de Barras de Alumínio
-Versão: 0.0.2
+Versão: 0.0.3
 Objetivo: Minimizar desperdício e maximizar sobras úteis
 """
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from collections import Counter
 from datetime import datetime
 import csv
@@ -15,9 +15,11 @@ import csv
 class OtimizadorCorte:
     """Classe principal com algoritmos de otimização"""
 
-    def __init__(self, tamanho_barra: float = 600, espessura_corte: float = 0):
+    def __init__(self, tamanho_barra: float = 600, espessura_corte: float = 0,
+                 limite_transporte: float = None):
         self.tamanho_barra = tamanho_barra
         self.espessura_corte = espessura_corte
+        self.limite_transporte = limite_transporte  # Ex: 300cm para Spin
 
     def calcular_cortes_greedy(self, pecas: List[float]) -> List[List[float]]:
         """
@@ -30,7 +32,6 @@ class OtimizadorCorte:
         for peca in pecas_ordenadas:
             colocada = False
             for i, barra in enumerate(barras):
-                # Considera espessura do corte para cada peça já na barra
                 espaco_usado = sum(barra) + len(barra) * self.espessura_corte
                 espaco_necessario = peca + self.espessura_corte
                 if espaco_usado + espaco_necessario <= self.tamanho_barra:
@@ -112,11 +113,128 @@ class OtimizadorCorte:
         usado = sum(barra) + len(barra) * self.espessura_corte
         return self.tamanho_barra - usado
 
+    def calcular_corte_transporte(self, barra: List[float]) -> Dict:
+        """
+        Calcula onde cortar a barra de 600cm para transporte no carro.
+        Objetivo: dividir em pedaços <= limite_transporte mantendo a sobra grande.
+
+        Retorna dict com:
+        - ponto_corte: onde dar o corte na barra original
+        - pedaco_1: lista de peças que ficam no pedaço 1
+        - pedaco_2: lista de peças que ficam no pedaço 2
+        - tamanho_pedaco_1: tamanho do pedaço 1 após o corte
+        - tamanho_pedaco_2: tamanho do pedaço 2 após o corte
+        - sobra_fica_em: em qual pedaço fica a sobra
+        """
+        if not self.limite_transporte:
+            return None
+
+        # Ordena peças por tamanho (maior primeiro)
+        pecas_ordenadas = sorted(barra, reverse=True)
+
+        # Calcula o uso total e sobra
+        uso_total = sum(barra) + len(barra) * self.espessura_corte
+        sobra = self.tamanho_barra - uso_total
+
+        # Se tudo cabe no limite, não precisa cortar para transporte
+        if uso_total <= self.limite_transporte:
+            return {
+                'precisa_corte': False,
+                'motivo': f'Tudo cabe em {self.limite_transporte}cm',
+                'pedaco_unico': uso_total
+            }
+
+        # Estratégia: agrupa peças em dois pedaços, tentando maximizar sobra em um deles
+        # Testa várias combinações para encontrar a melhor divisão
+
+        melhor_divisao = None
+        melhor_sobra_max = -1
+
+        # Gera todas as possíveis divisões das peças em dois grupos
+        n = len(pecas_ordenadas)
+
+        for mask in range(1, 2**n):  # Todas combinações exceto vazio
+            grupo1 = []
+            grupo2 = []
+
+            for i in range(n):
+                if mask & (1 << i):
+                    grupo1.append(pecas_ordenadas[i])
+                else:
+                    grupo2.append(pecas_ordenadas[i])
+
+            if not grupo1 or not grupo2:
+                continue
+
+            # Calcula tamanho de cada pedaço (peças + cortes entre elas)
+            tam_grupo1 = sum(grupo1) + len(grupo1) * self.espessura_corte
+            tam_grupo2 = sum(grupo2) + len(grupo2) * self.espessura_corte
+
+            # Adiciona espaço para a sobra no grupo que tiver espaço
+            # A sobra vai junto com um dos grupos
+
+            # Tenta sobra no grupo 1
+            tam_pedaco1_com_sobra = tam_grupo1 + sobra
+            tam_pedaco2_sem_sobra = tam_grupo2 + self.espessura_corte  # corte de transporte
+
+            if tam_pedaco1_com_sobra <= self.limite_transporte and tam_pedaco2_sem_sobra <= self.limite_transporte:
+                if sobra > melhor_sobra_max:
+                    melhor_sobra_max = sobra
+                    melhor_divisao = {
+                        'precisa_corte': True,
+                        'pedaco_1': grupo1,
+                        'pedaco_2': grupo2,
+                        'tamanho_pedaco_1': tam_pedaco1_com_sobra,
+                        'tamanho_pedaco_2': tam_pedaco2_sem_sobra,
+                        'sobra_fica_em': 1,
+                        'sobra': sobra,
+                        'ponto_corte': tam_grupo2 + self.espessura_corte
+                    }
+
+            # Tenta sobra no grupo 2
+            tam_pedaco1_sem_sobra = tam_grupo1 + self.espessura_corte  # corte de transporte
+            tam_pedaco2_com_sobra = tam_grupo2 + sobra
+
+            if tam_pedaco1_sem_sobra <= self.limite_transporte and tam_pedaco2_com_sobra <= self.limite_transporte:
+                if sobra > melhor_sobra_max:
+                    melhor_sobra_max = sobra
+                    melhor_divisao = {
+                        'precisa_corte': True,
+                        'pedaco_1': grupo1,
+                        'pedaco_2': grupo2,
+                        'tamanho_pedaco_1': tam_pedaco1_sem_sobra,
+                        'tamanho_pedaco_2': tam_pedaco2_com_sobra,
+                        'sobra_fica_em': 2,
+                        'sobra': sobra,
+                        'ponto_corte': tam_grupo1 + self.espessura_corte
+                    }
+
+        if melhor_divisao:
+            return melhor_divisao
+
+        # Se não encontrou divisão válida, tenta corte simples no meio
+        # (algumas peças podem ser maiores que limite_transporte/2)
+        ponto_corte = self.limite_transporte
+        return {
+            'precisa_corte': True,
+            'aviso': f'Algumas peças podem não caber no limite de {self.limite_transporte}cm',
+            'ponto_corte': ponto_corte,
+            'tamanho_pedaco_1': ponto_corte,
+            'tamanho_pedaco_2': self.tamanho_barra - ponto_corte - self.espessura_corte
+        }
+
     def analisar_resultado(self, barras: List[List[float]]) -> dict:
         """Retorna análise completa do resultado"""
         sobras = [self.calcular_sobra(b) for b in barras]
         material_usado = sum(sum(b) for b in barras)
         material_total = len(barras) * self.tamanho_barra
+
+        # Calcula cortes de transporte se limite definido
+        cortes_transporte = []
+        if self.limite_transporte:
+            for barra in barras:
+                corte = self.calcular_corte_transporte(barra)
+                cortes_transporte.append(corte)
 
         return {
             'barras': barras,
@@ -125,7 +243,8 @@ class OtimizadorCorte:
             'sobra_total': sum(sobras),
             'material_usado': material_usado,
             'material_total': material_total,
-            'eficiencia': (material_usado / material_total * 100) if material_total > 0 else 0
+            'eficiencia': (material_usado / material_total * 100) if material_total > 0 else 0,
+            'cortes_transporte': cortes_transporte if cortes_transporte else None
         }
 
 
@@ -134,9 +253,9 @@ class InterfaceGrafica:
 
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Otimizador de Corte de Barras de Alumínio v0.0.2")
-        self.root.geometry("900x700")
-        self.root.minsize(800, 600)
+        self.root.title("Otimizador de Corte de Barras de Alumínio v0.0.3")
+        self.root.geometry("950x750")
+        self.root.minsize(900, 700)
 
         self.pecas = []
         self.ultimo_resultado = None
@@ -144,14 +263,14 @@ class InterfaceGrafica:
         self.criar_interface()
 
     def criar_interface(self):
-        # Frame principal
+        # Frame principal com scroll
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky="nsew")
 
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(4, weight=1)
+        main_frame.rowconfigure(5, weight=1)
 
         # === Configurações ===
         config_frame = ttk.LabelFrame(main_frame, text="Configurações", padding="10")
@@ -167,9 +286,25 @@ class InterfaceGrafica:
         self.entry_espessura.insert(0, "3")
         self.entry_espessura.grid(row=0, column=3, padx=5)
 
+        # === Transporte ===
+        transporte_frame = ttk.LabelFrame(main_frame, text="Corte para Transporte (opcional)", padding="10")
+        transporte_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        self.var_transporte = tk.BooleanVar(value=False)
+        ttk.Checkbutton(transporte_frame, text="Calcular corte para transporte",
+                        variable=self.var_transporte, command=self.toggle_transporte).grid(row=0, column=0, padx=5)
+
+        ttk.Label(transporte_frame, text="Limite do carro (cm):").grid(row=0, column=1, padx=5)
+        self.entry_limite = ttk.Entry(transporte_frame, width=10)
+        self.entry_limite.insert(0, "300")
+        self.entry_limite.config(state='disabled')
+        self.entry_limite.grid(row=0, column=2, padx=5)
+
+        ttk.Label(transporte_frame, text="(Ex: Spin = 300cm)").grid(row=0, column=3, padx=5)
+
         # === Entrada de peças ===
         input_frame = ttk.LabelFrame(main_frame, text="Adicionar Peças", padding="10")
-        input_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        input_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
 
         ttk.Label(input_frame, text="Medida (cm):").grid(row=0, column=0, padx=5)
         self.entry_medida = ttk.Entry(input_frame, width=10)
@@ -187,7 +322,7 @@ class InterfaceGrafica:
 
         # === Quadros pré-definidos ===
         quadro_frame = ttk.LabelFrame(main_frame, text="Adicionar Quadro (4 lados)", padding="10")
-        quadro_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        quadro_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 10))
 
         ttk.Label(quadro_frame, text="Medidas do quadro (ex: 75x75x40x40):").grid(row=0, column=0, padx=5)
         self.entry_quadro = ttk.Entry(quadro_frame, width=20)
@@ -198,11 +333,11 @@ class InterfaceGrafica:
 
         # === Lista de peças ===
         lista_frame = ttk.LabelFrame(main_frame, text="Peças Adicionadas", padding="10")
-        lista_frame.grid(row=3, column=0, sticky="nsew", pady=(0, 10), padx=(0, 5))
+        lista_frame.grid(row=4, column=0, sticky="nsew", pady=(0, 10), padx=(0, 5))
         lista_frame.columnconfigure(0, weight=1)
         lista_frame.rowconfigure(0, weight=1)
 
-        self.lista_pecas = tk.Listbox(lista_frame, width=30, height=10)
+        self.lista_pecas = tk.Listbox(lista_frame, width=30, height=8)
         self.lista_pecas.grid(row=0, column=0, sticky="nsew")
 
         scrollbar_lista = ttk.Scrollbar(lista_frame, orient="vertical", command=self.lista_pecas.yview)
@@ -213,7 +348,7 @@ class InterfaceGrafica:
 
         # === Botão calcular ===
         btn_frame = ttk.Frame(main_frame)
-        btn_frame.grid(row=3, column=1, sticky="n", pady=(0, 10))
+        btn_frame.grid(row=4, column=1, sticky="n", pady=(0, 10))
 
         ttk.Button(btn_frame, text="CALCULAR OTIMIZAÇÃO", command=self.calcular,
                    style="Accent.TButton").grid(row=0, column=0, pady=10, ipady=10, ipadx=20)
@@ -223,19 +358,25 @@ class InterfaceGrafica:
 
         # === Resultado ===
         resultado_frame = ttk.LabelFrame(main_frame, text="Resultado da Otimização", padding="10")
-        resultado_frame.grid(row=4, column=0, columnspan=2, sticky="nsew")
+        resultado_frame.grid(row=5, column=0, columnspan=2, sticky="nsew")
         resultado_frame.columnconfigure(0, weight=1)
         resultado_frame.rowconfigure(0, weight=1)
 
-        self.texto_resultado = tk.Text(resultado_frame, wrap=tk.WORD, width=80, height=15)
+        self.texto_resultado = tk.Text(resultado_frame, wrap=tk.WORD, width=80, height=18, font=('Consolas', 10))
         self.texto_resultado.grid(row=0, column=0, sticky="nsew")
 
         scrollbar_resultado = ttk.Scrollbar(resultado_frame, orient="vertical", command=self.texto_resultado.yview)
         scrollbar_resultado.grid(row=0, column=1, sticky="ns")
         self.texto_resultado.config(yscrollcommand=scrollbar_resultado.set)
 
-        main_frame.rowconfigure(3, weight=1)
-        main_frame.rowconfigure(4, weight=2)
+        main_frame.rowconfigure(4, weight=1)
+        main_frame.rowconfigure(5, weight=2)
+
+    def toggle_transporte(self):
+        if self.var_transporte.get():
+            self.entry_limite.config(state='normal')
+        else:
+            self.entry_limite.config(state='disabled')
 
     def adicionar_peca(self):
         try:
@@ -286,12 +427,12 @@ class InterfaceGrafica:
     def remover_peca(self):
         selecao = self.lista_pecas.curselection()
         if selecao:
-            # Pega o texto selecionado e extrai a medida
             texto = self.lista_pecas.get(selecao[0])
-            medida = float(texto.split('x')[0].strip())
-            if medida in self.pecas:
-                self.pecas.remove(medida)
-            self.atualizar_lista_pecas()
+            if "cm x" in texto:
+                medida = float(texto.split('cm')[0].strip())
+                if medida in self.pecas:
+                    self.pecas.remove(medida)
+                self.atualizar_lista_pecas()
 
     def limpar_pecas(self):
         self.pecas = []
@@ -305,7 +446,7 @@ class InterfaceGrafica:
             self.lista_pecas.insert(tk.END, f"{medida}cm x {qtd}")
 
         total = sum(self.pecas)
-        self.lista_pecas.insert(tk.END, f"─" * 20)
+        self.lista_pecas.insert(tk.END, "─" * 20)
         self.lista_pecas.insert(tk.END, f"Total: {total}cm ({len(self.pecas)} peças)")
 
     def calcular(self):
@@ -316,7 +457,11 @@ class InterfaceGrafica:
         try:
             tamanho_barra = float(self.entry_tamanho.get().replace(',', '.'))
             espessura_mm = float(self.entry_espessura.get().replace(',', '.'))
-            espessura_cm = espessura_mm / 10  # Converte mm para cm
+            espessura_cm = espessura_mm / 10
+
+            limite_transporte = None
+            if self.var_transporte.get():
+                limite_transporte = float(self.entry_limite.get().replace(',', '.'))
 
         except ValueError:
             messagebox.showerror("Erro", "Configurações inválidas!")
@@ -328,26 +473,33 @@ class InterfaceGrafica:
                 messagebox.showerror("Erro", f"Peça de {peca}cm é maior que a barra de {tamanho_barra}cm!")
                 return
 
-        otimizador = OtimizadorCorte(tamanho_barra, espessura_cm)
+        # Verifica se alguma peça é maior que o limite de transporte
+        if limite_transporte:
+            for peca in self.pecas:
+                if peca > limite_transporte:
+                    messagebox.showwarning("Aviso",
+                        f"Peça de {peca}cm é maior que o limite de transporte ({limite_transporte}cm).\n"
+                        "Você precisará de um veículo maior para esta peça.")
+
+        otimizador = OtimizadorCorte(tamanho_barra, espessura_cm, limite_transporte)
 
         # Calcula com os 3 métodos
         resultado_ffd = otimizador.analisar_resultado(otimizador.calcular_cortes_greedy(self.pecas))
         resultado_bfd = otimizador.analisar_resultado(otimizador.calcular_cortes_best_fit(self.pecas))
         resultado_otim = otimizador.analisar_resultado(otimizador.otimizar_para_maiores_sobras(self.pecas))
 
-        # Escolhe o melhor (menor número de barras, depois maior sobra útil)
         resultados = [
             ('First Fit Decreasing', resultado_ffd),
             ('Best Fit Decreasing', resultado_bfd),
             ('Otimizado p/ Maiores Sobras', resultado_otim)
         ]
 
-        # Ordena: menos barras primeiro, depois maior sobra máxima
         melhor_nome, melhor = min(resultados, key=lambda x: (x[1]['num_barras'], -max(x[1]['sobras'])))
 
         self.ultimo_resultado = {
             'tamanho_barra': tamanho_barra,
             'espessura_corte': espessura_mm,
+            'limite_transporte': limite_transporte,
             'pecas': self.pecas.copy(),
             'metodo': melhor_nome,
             'resultado': melhor
@@ -356,36 +508,66 @@ class InterfaceGrafica:
         # Exibe resultado
         self.texto_resultado.delete(1.0, tk.END)
 
-        texto = "=" * 60 + "\n"
+        texto = "=" * 65 + "\n"
         texto += "RESULTADO DA OTIMIZAÇÃO\n"
-        texto += "=" * 60 + "\n\n"
+        texto += "=" * 65 + "\n\n"
 
         texto += f"Configurações:\n"
-        texto += f"  - Tamanho da barra: {tamanho_barra}cm\n"
-        texto += f"  - Espessura do corte: {espessura_mm}mm\n"
-        texto += f"  - Total de peças: {len(self.pecas)}\n"
-        texto += f"  - Método usado: {melhor_nome}\n\n"
+        texto += f"  • Tamanho da barra: {tamanho_barra}cm\n"
+        texto += f"  • Espessura do corte: {espessura_mm}mm\n"
+        if limite_transporte:
+            texto += f"  • Limite transporte: {limite_transporte}cm\n"
+        texto += f"  • Total de peças: {len(self.pecas)}\n"
+        texto += f"  • Método usado: {melhor_nome}\n\n"
 
-        texto += "-" * 60 + "\n"
-        texto += f">>> VOCÊ PRECISARÁ DE {melhor['num_barras']} BARRA(S) <<<\n"
-        texto += "-" * 60 + "\n\n"
+        texto += "-" * 65 + "\n"
+        texto += f">>> VOCÊ PRECISARÁ DE {melhor['num_barras']} BARRA(S) DE {tamanho_barra}cm <<<\n"
+        texto += "-" * 65 + "\n\n"
 
-        texto += "PLANO DE CORTE:\n\n"
+        texto += "PLANO DE CORTE:\n"
+        texto += "=" * 65 + "\n"
 
         for i, barra in enumerate(melhor['barras'], 1):
             sobra = otimizador.calcular_sobra(barra)
             pecas_str = " + ".join(f"{p}cm" for p in sorted(barra, reverse=True))
-            texto += f"Barra {i}:\n"
-            texto += f"  Cortes: {pecas_str}\n"
-            texto += f"  Usado: {sum(barra):.1f}cm | Sobra: {sobra:.1f}cm\n\n"
 
-        texto += "-" * 60 + "\n"
-        texto += "RESUMO:\n"
-        texto += f"  - Material total: {melhor['material_total']:.1f}cm\n"
-        texto += f"  - Material usado: {melhor['material_usado']:.1f}cm\n"
-        texto += f"  - Sobra total: {melhor['sobra_total']:.1f}cm\n"
-        texto += f"  - Eficiência: {melhor['eficiencia']:.1f}%\n"
-        texto += f"  - Sobras por barra: {[f'{s:.1f}cm' for s in sorted(melhor['sobras'], reverse=True)]}\n"
+            texto += f"\n📦 BARRA {i}:\n"
+            texto += f"   Peças: {pecas_str}\n"
+            texto += f"   Usado: {sum(barra):.1f}cm | Sobra: {sobra:.1f}cm\n"
+
+            # Mostra corte de transporte se habilitado
+            if melhor['cortes_transporte'] and melhor['cortes_transporte'][i-1]:
+                corte = melhor['cortes_transporte'][i-1]
+
+                if not corte.get('precisa_corte', True):
+                    texto += f"\n   🚗 TRANSPORTE: Cabe inteira no carro ({corte.get('pedaco_unico', 0):.1f}cm)\n"
+                else:
+                    texto += f"\n   🚗 CORTE PARA TRANSPORTE (máx {limite_transporte}cm):\n"
+
+                    if 'aviso' in corte:
+                        texto += f"   ⚠️  {corte['aviso']}\n"
+                    else:
+                        texto += f"   ✂️  Cortar em: {corte['ponto_corte']:.1f}cm da ponta\n"
+                        texto += f"\n   Pedaço A ({corte['tamanho_pedaco_1']:.1f}cm):\n"
+                        if 'pedaco_1' in corte:
+                            texto += f"      Peças: {' + '.join(f'{p}cm' for p in sorted(corte['pedaco_1'], reverse=True))}\n"
+                            if corte['sobra_fica_em'] == 1:
+                                texto += f"      + Sobra de {corte['sobra']:.1f}cm\n"
+
+                        texto += f"\n   Pedaço B ({corte['tamanho_pedaco_2']:.1f}cm):\n"
+                        if 'pedaco_2' in corte:
+                            texto += f"      Peças: {' + '.join(f'{p}cm' for p in sorted(corte['pedaco_2'], reverse=True))}\n"
+                            if corte['sobra_fica_em'] == 2:
+                                texto += f"      + Sobra de {corte['sobra']:.1f}cm\n"
+
+            texto += "\n" + "-" * 65 + "\n"
+
+        texto += "\nRESUMO:\n"
+        texto += f"  • Material total: {melhor['material_total']:.1f}cm\n"
+        texto += f"  • Material usado: {melhor['material_usado']:.1f}cm\n"
+        texto += f"  • Sobra total: {melhor['sobra_total']:.1f}cm\n"
+        texto += f"  • Eficiência: {melhor['eficiencia']:.1f}%\n"
+        texto += f"  • Sobras por barra: {[f'{s:.1f}cm' for s in sorted(melhor['sobras'], reverse=True)]}\n"
 
         self.texto_resultado.insert(1.0, texto)
 
@@ -421,15 +603,15 @@ class InterfaceGrafica:
             with open(filepath, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f, delimiter=';')
 
-                # Cabeçalho
-                writer.writerow(['OTIMIZADOR DE CORTE DE BARRAS DE ALUMÍNIO'])
+                writer.writerow(['OTIMIZADOR DE CORTE DE BARRAS DE ALUMÍNIO v0.0.3'])
                 writer.writerow(['Data', datetime.now().strftime('%d/%m/%Y %H:%M')])
                 writer.writerow(['Tamanho da Barra (cm)', resultado['tamanho_barra']])
                 writer.writerow(['Espessura do Corte (mm)', resultado['espessura_corte']])
+                if resultado.get('limite_transporte'):
+                    writer.writerow(['Limite Transporte (cm)', resultado['limite_transporte']])
                 writer.writerow(['Método', resultado['metodo']])
                 writer.writerow([])
 
-                # Peças necessárias
                 writer.writerow(['PEÇAS NECESSÁRIAS'])
                 writer.writerow(['Medida (cm)', 'Quantidade'])
                 contagem = Counter(resultado['pecas'])
@@ -437,15 +619,23 @@ class InterfaceGrafica:
                     writer.writerow([medida, qtd])
                 writer.writerow([])
 
-                # Plano de corte
                 writer.writerow(['PLANO DE CORTE'])
-                writer.writerow(['Barra', 'Peças (cm)', 'Total Usado (cm)', 'Sobra (cm)'])
+                writer.writerow(['Barra', 'Peças (cm)', 'Total Usado (cm)', 'Sobra (cm)', 'Corte Transporte (cm)'])
 
-                otimizador = OtimizadorCorte(resultado['tamanho_barra'], resultado['espessura_corte']/10)
+                otimizador = OtimizadorCorte(resultado['tamanho_barra'], resultado['espessura_corte']/10,
+                                             resultado.get('limite_transporte'))
+
                 for i, barra in enumerate(resultado['resultado']['barras'], 1):
                     pecas_str = ' + '.join(str(p) for p in sorted(barra, reverse=True))
                     sobra = otimizador.calcular_sobra(barra)
-                    writer.writerow([i, pecas_str, sum(barra), f'{sobra:.1f}'])
+
+                    corte_str = '-'
+                    if resultado['resultado'].get('cortes_transporte'):
+                        corte = resultado['resultado']['cortes_transporte'][i-1]
+                        if corte and corte.get('precisa_corte'):
+                            corte_str = f"{corte.get('ponto_corte', 'N/A')}"
+
+                    writer.writerow([i, pecas_str, sum(barra), f'{sobra:.1f}', corte_str])
 
                 writer.writerow([])
                 writer.writerow(['RESUMO'])
@@ -460,9 +650,9 @@ class InterfaceGrafica:
 
 def modo_terminal():
     """Modo interativo via terminal"""
-    print("=" * 60)
-    print("OTIMIZADOR DE CORTE DE BARRAS DE ALUMÍNIO v0.0.2")
-    print("=" * 60)
+    print("=" * 65)
+    print("OTIMIZADOR DE CORTE DE BARRAS DE ALUMÍNIO v0.0.3")
+    print("=" * 65)
 
     # Configurações
     tamanho_input = input("\nTamanho da barra em cm [600]: ").strip()
@@ -471,6 +661,9 @@ def modo_terminal():
     espessura_input = input("Espessura do corte em mm [3]: ").strip()
     espessura_mm = float(espessura_input) if espessura_input else 3
     espessura_cm = espessura_mm / 10
+
+    transporte_input = input("Limite do carro em cm (Enter para ignorar) [300]: ").strip()
+    limite_transporte = float(transporte_input) if transporte_input else None
 
     pecas = []
 
@@ -492,15 +685,12 @@ def modo_terminal():
             partes = entrada.replace(',', '.').split('x')
 
             if len(partes) == 1:
-                # Apenas medida
                 pecas.append(float(partes[0]))
             elif len(partes) == 2:
-                # medidaxquantidade
                 medida = float(partes[0])
                 qtd = int(partes[1])
                 pecas.extend([medida] * qtd)
             elif len(partes) == 4:
-                # Quadro: 4 medidas
                 for p in partes:
                     pecas.append(float(p))
             else:
@@ -512,8 +702,7 @@ def modo_terminal():
         except ValueError:
             print("Valor inválido!")
 
-    # Calcula
-    otimizador = OtimizadorCorte(tamanho_barra, espessura_cm)
+    otimizador = OtimizadorCorte(tamanho_barra, espessura_cm, limite_transporte)
 
     resultado_ffd = otimizador.analisar_resultado(otimizador.calcular_cortes_greedy(pecas))
     resultado_bfd = otimizador.analisar_resultado(otimizador.calcular_cortes_best_fit(pecas))
@@ -527,53 +716,76 @@ def modo_terminal():
 
     melhor_nome, melhor = min(resultados, key=lambda x: (x[1]['num_barras'], -max(x[1]['sobras'])))
 
-    # Exibe resultado
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 65)
     print("RESULTADO DA OTIMIZAÇÃO")
-    print("=" * 60)
+    print("=" * 65)
 
     print(f"\nConfiguração: Barra {tamanho_barra}cm, Corte {espessura_mm}mm")
+    if limite_transporte:
+        print(f"Limite transporte: {limite_transporte}cm")
     print(f"Método: {melhor_nome}")
 
-    print("\n" + "-" * 60)
+    print("\n" + "-" * 65)
     print(f">>> VOCÊ PRECISARÁ DE {melhor['num_barras']} BARRA(S) <<<")
-    print("-" * 60)
+    print("-" * 65)
 
     print("\nPLANO DE CORTE:\n")
 
     for i, barra in enumerate(melhor['barras'], 1):
         sobra = otimizador.calcular_sobra(barra)
         pecas_str = " + ".join(f"{p}cm" for p in sorted(barra, reverse=True))
-        print(f"Barra {i}: {pecas_str}")
-        print(f"         Usado: {sum(barra):.1f}cm | Sobra: {sobra:.1f}cm\n")
+        print(f"BARRA {i}: {pecas_str}")
+        print(f"         Usado: {sum(barra):.1f}cm | Sobra: {sobra:.1f}cm")
 
-    print("-" * 60)
+        if melhor['cortes_transporte'] and melhor['cortes_transporte'][i-1]:
+            corte = melhor['cortes_transporte'][i-1]
+            if not corte.get('precisa_corte', True):
+                print(f"         Transporte: Cabe inteira no carro")
+            elif 'ponto_corte' in corte:
+                print(f"         Corte transporte: {corte['ponto_corte']:.1f}cm da ponta")
+                if 'pedaco_1' in corte:
+                    print(f"           Pedaço A: {' + '.join(f'{p}cm' for p in corte['pedaco_1'])}")
+                    print(f"           Pedaço B: {' + '.join(f'{p}cm' for p in corte['pedaco_2'])}")
+        print()
+
+    print("-" * 65)
     print(f"Eficiência: {melhor['eficiencia']:.1f}%")
     print(f"Sobras: {[f'{s:.1f}cm' for s in sorted(melhor['sobras'], reverse=True)]}")
 
-    # Pergunta se quer salvar
     salvar = input("\nSalvar resultado? (txt/csv/n): ").strip().lower()
 
     if salvar == 'txt':
         nome = f"corte_aluminio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         with open(nome, 'w', encoding='utf-8') as f:
-            f.write(f"OTIMIZADOR DE CORTE - {datetime.now().strftime('%d/%m/%Y %H:%M')}\n")
-            f.write(f"Barra: {tamanho_barra}cm | Corte: {espessura_mm}mm\n")
-            f.write(f"Barras necessárias: {melhor['num_barras']}\n\n")
+            f.write(f"OTIMIZADOR DE CORTE v0.0.3 - {datetime.now().strftime('%d/%m/%Y %H:%M')}\n")
+            f.write(f"Barra: {tamanho_barra}cm | Corte: {espessura_mm}mm")
+            if limite_transporte:
+                f.write(f" | Transporte: {limite_transporte}cm")
+            f.write(f"\nBarras necessárias: {melhor['num_barras']}\n\n")
             for i, barra in enumerate(melhor['barras'], 1):
                 sobra = otimizador.calcular_sobra(barra)
                 f.write(f"Barra {i}: {' + '.join(f'{p}cm' for p in sorted(barra, reverse=True))}\n")
-                f.write(f"         Sobra: {sobra:.1f}cm\n\n")
+                f.write(f"         Sobra: {sobra:.1f}cm\n")
+                if melhor['cortes_transporte'] and melhor['cortes_transporte'][i-1]:
+                    corte = melhor['cortes_transporte'][i-1]
+                    if corte.get('precisa_corte') and 'ponto_corte' in corte:
+                        f.write(f"         Corte transporte: {corte['ponto_corte']:.1f}cm\n")
+                f.write("\n")
         print(f"Salvo em: {nome}")
 
     elif salvar == 'csv':
         nome = f"corte_aluminio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         with open(nome, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter=';')
-            writer.writerow(['Barra', 'Peças', 'Sobra (cm)'])
+            writer.writerow(['Barra', 'Peças', 'Sobra (cm)', 'Corte Transporte (cm)'])
             for i, barra in enumerate(melhor['barras'], 1):
                 sobra = otimizador.calcular_sobra(barra)
-                writer.writerow([i, ' + '.join(str(p) for p in barra), f'{sobra:.1f}'])
+                corte_str = '-'
+                if melhor['cortes_transporte'] and melhor['cortes_transporte'][i-1]:
+                    corte = melhor['cortes_transporte'][i-1]
+                    if corte.get('precisa_corte') and 'ponto_corte' in corte:
+                        corte_str = f"{corte['ponto_corte']:.1f}"
+                writer.writerow([i, ' + '.join(str(p) for p in barra), f'{sobra:.1f}', corte_str])
         print(f"Salvo em: {nome}")
 
 
