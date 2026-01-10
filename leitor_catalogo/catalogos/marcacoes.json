@@ -1,0 +1,249 @@
+{
+  "1": {
+    "categoria": null,
+    "itens": []
+  },
+  "2": {
+    "categoria": null,
+    "itens": []
+  },
+  "3": {
+    "categoria": null,
+    "itens": []
+  },
+  "4": {
+    "categoria": null,
+    "itens": []
+  },
+  "5": {
+    "categoria": null,
+    "itens": []
+  },
+  "6": {
+    "categoria": "Perfis Tabelados",
+    "itens": [
+      {
+        "nome": "Tubo Redondo",
+        "marcacoes": {
+          "nome": [
+            106,
+            325,
+            431,
+            384
+          ],
+          "imagem": [
+            503,
+            278,
+            763,
+            428
+          ],
+          "tabela": [
+            79,
+            425,
+            1179,
+            855
+          ]
+        }
+      },
+      {
+        "nome": "Tubo Quadrado",
+        "marcacoes": {
+          "nome": [
+            106,
+            993,
+            454,
+            1069
+          ],
+          "imagem": [
+            515,
+            955,
+            754,
+            1099
+          ],
+          "tabela": [
+            85,
+            1104,
+            1178,
+            1516
+          ]
+        }
+      }
+    ]
+  },
+  "7": {
+    "categoria": "Perfis Tabelados",
+    "itens": [
+      {
+        "nome": "Tubo Retangular",
+        "marcacoes": {
+          "nome": [
+            88,
+            272,
+            462,
+            340
+          ],
+          "imagem": [
+            481,
+            199,
+            799,
+            367
+          ],
+          "tabela": [
+            79,
+            370,
+            1177,
+            940
+          ]
+        }
+      },
+      {
+        "nome": "Cantoneira de Abas Iguais",
+        "marcacoes": {
+          "nome": [
+            89,
+            970,
+            413,
+            1086
+          ],
+          "imagem": [
+            473,
+            947,
+            731,
+            1117
+          ],
+          "tabela": [
+            76,
+            1115,
+            1164,
+            1629
+          ]
+        }
+      }
+    ]
+  },
+  "8": {
+    "categoria": "Perfis Tabelados",
+    "itens": [
+      {
+        "nome": "Cantoneira de Abas Desiguais",
+        "marcacoes": {
+          "nome": [
+            79,
+            230,
+            420,
+            340
+          ],
+          "imagem": [
+            420,
+            150,
+            820,
+            400
+          ],
+          "tabela": [
+            79,
+            350,
+            1170,
+            690
+          ]
+        }
+      },
+      {
+        "nome": "Barra Chata",
+        "marcacoes": {
+          "nome": [
+            79,
+            710,
+            350,
+            800
+          ],
+          "imagem": [
+            380,
+            690,
+            800,
+            830
+          ],
+          "tabela": [
+            79,
+            860,
+            1170,
+            1520
+          ]
+        }
+      }
+    ]
+  },
+  "9": {
+    "categoria": "Perfis Tabelados",
+    "itens": [
+      {
+        "nome": "Perfil U de abas iguais",
+        "marcacoes": {
+          "nome": [
+            84,
+            290,
+            355,
+            413
+          ],
+          "imagem": [
+            523,
+            249,
+            714,
+            433
+          ],
+          "tabela": [
+            71,
+            449,
+            1184,
+            767
+          ]
+        }
+      },
+      {
+        "nome": "Perfil U de abas Desiguais",
+        "marcacoes": {
+          "nome": [
+            82,
+            798,
+            451,
+            946
+          ],
+          "imagem": [
+            515,
+            776,
+            722,
+            954
+          ],
+          "tabela": [
+            77,
+            963,
+            1176,
+            1224
+          ]
+        }
+      },
+      {
+        "nome": "Vergalhão Redondo",
+        "marcacoes": {
+          "nome": [
+            72,
+            1238,
+            332,
+            1372
+          ],
+          "imagem": [
+            526,
+            1240,
+            698,
+            1371
+          ],
+          "tabela": [
+            72,
+            1393,
+            1177,
+            1634
+          ]
+        }
+      }
+    ]
+  }
+}

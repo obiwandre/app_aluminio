@@ -1,0 +1,17 @@
+Índice do PDF: C:\Projects\app_aluminio\leitor_catalogo\catalogos\catalogo-aluminovo_2025.pdf
+Total de páginas: 132
+Tamanho original: 12.73 MB
+==================================================
+
+parte_01_pag_1-62.pdf
+  Páginas: 1-62
+  Tamanho: 4.22 MB
+
+parte_02_pag_63-124.pdf
+  Páginas: 63-124
+  Tamanho: 7.09 MB
+
+parte_03_pag_125-132.pdf
+  Páginas: 125-132
+  Tamanho: 2.18 MB
+
